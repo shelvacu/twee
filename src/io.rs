@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 pub trait SliceExt {
     type Item: Sized;
 
@@ -47,13 +49,11 @@ pub trait ByteWrite {
 }
 
 pub trait ByteRead {
-    fn read_byte(&mut self) -> u8;
-
-    fn read_buf(&mut self, data_out: &mut [u8]) {
-        for i in 0..data_out.len() {
-            data_out[i] = self.read_byte();
-        }
+    fn read_byte(&mut self) -> u8 {
+        self.read_buf(1)[0]
     }
+
+    fn read_buf<'a>(&'a mut self, len: u64) -> Cow<'a, [u8]>;
 }
 
 impl ByteWrite for Vec<u8> {
@@ -85,6 +85,13 @@ impl<'a> ByteCursor<'a> {
 }
 
 impl<'a> ByteRead for ByteCursor<'a> {
+    fn read_buf<'b>(&'b mut self, len: u64) -> Cow<'b, [u8]> {
+        let len_us:usize = len.try_into().unwrap();
+        let res = &self.inner[self.idx .. self.idx + len_us];
+        self.idx += len_us;
+        res.into()
+    }
+
     fn read_byte(&mut self) -> u8 {
         let res = self.inner[self.idx];
         self.idx += 1;
@@ -94,7 +101,7 @@ impl<'a> ByteRead for ByteCursor<'a> {
 
 #[derive(Debug,Copy,Clone,Default)]
 pub struct ByteCounter {
-    pub count: usize
+    pub count: u64
 }
 
 impl ByteWrite for ByteCounter {
@@ -103,6 +110,7 @@ impl ByteWrite for ByteCounter {
     }
 
     fn write_buf(&mut self, data: &[u8]) {
-        self.count += data.len();
+        let len:u64 = data.len().try_into().unwrap();
+        self.count += len;
     }
 }

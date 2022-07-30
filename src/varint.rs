@@ -1,10 +1,17 @@
-use crate::serde::{ByteSerialize, ByteDeserialize};
+use crate::serde::{ByteSerialize, ByteDeserialize, ByteTypeId};
 use crate::io;
 
-pub enum UVarInt {}
+#[derive(Debug,Copy,Clone,Default)]
+pub struct UVarInt;
 
 #[derive(Debug,PartialEq,Eq,Clone,Copy,Hash)]
 pub struct VarIntTooBig;
+
+impl ByteTypeId<u64> for UVarInt {
+    fn byte_type_id() -> Vec<&'static str> {
+        vec!["twee::UVarInt"]
+    }
+}
 
 impl ByteSerialize<u64> for UVarInt {
     fn byte_serialize<W: io::ByteWrite>(item: &u64, io: &mut W) {
@@ -18,7 +25,7 @@ impl ByteSerialize<u64> for UVarInt {
         }
     }
 
-    fn size(item: &u64) -> usize {
+    fn size(item: &u64) -> u64 {
         // 0.upto(9){ |n| puts "#{2**(7*n)}..=#{2**(7*(n+1))-1} => #{n+1}," }
         // and then some manual editing for 0 and u64::MAX...
         match *item {
@@ -64,7 +71,14 @@ impl ByteDeserialize<u64> for UVarInt {
 
 /// Uses the same encoding as protocol buffers' signed integers
 /// https://developers.google.com/protocol-buffers/docs/encoding#signed-ints
-pub enum SVarInt {}
+#[derive(Debug,Copy,Clone,Default)]
+pub struct SVarInt;
+
+impl ByteTypeId<i64> for SVarInt {
+    fn byte_type_id() -> Vec<&'static str> {
+        vec!["twee::SVarInt"]
+    }
+}
 
 // Encoding a signed varint is just taking the number and encoding `(n << 1) ^ (n >> un::BITS-1)`
 
@@ -81,7 +95,7 @@ impl ByteSerialize<i64> for SVarInt {
         UVarInt::byte_serialize(&encode_svarint(*item), io)
     }
 
-    fn size(item: &i64) -> usize {
+    fn size(item: &i64) -> u64 {
         UVarInt::size(&encode_svarint(*item))
     }
 }
