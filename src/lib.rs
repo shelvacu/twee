@@ -8,6 +8,7 @@ pub mod varint;
 pub mod lists;
 pub mod const_list;
 pub mod string;
+pub mod io_wrap;
 
 //mod cursed;
 pub fn assert_serde_across_through<Ein, Eout, Tin, Tout>(item: &Tin)
@@ -24,7 +25,7 @@ where
     );
     let est_size = Ein::size(item);
     let mut buf:Vec<u8> = vec![];
-    Ein::byte_serialize(item, &mut buf);
+    Ein::byte_serialize(item, &mut buf).unwrap();
     let buf_len:u64 = buf.len().try_into().unwrap();
     assert_eq!(buf_len, est_size);
     let mut cur = io::ByteCursor::new(buf.as_slice());

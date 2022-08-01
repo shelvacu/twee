@@ -1,4 +1,4 @@
-use crate::serde::{ByteSerialize, ByteDeserialize, ByteTypeId};
+use crate::serde::{ByteSerialize, ByteDeserialize, ByteTypeId, ParseOrIOError};
 use crate::io;
 
 #[derive(Debug,Copy,Clone,Default)]
@@ -14,14 +14,14 @@ impl ByteTypeId<u64> for UVarInt {
 }
 
 impl ByteSerialize<u64> for UVarInt {
-    fn byte_serialize<W: io::ByteWrite>(item: &u64, io: &mut W) {
+    fn byte_serialize<W: io::ByteWrite>(item: &u64, io: &mut W) -> Result<(), W::Err> {
         let mut val:u64 = *item;
         loop {
             let mut byte = (val & 0x7f) as u8;
             if val > 127 { byte |= 0x80 }
-            io.write_byte(byte);
+            io.write_byte(byte)?;
             val >>= 7;
-            if val == 0 { break; }
+            if val == 0 { break Ok(()); }
         }
     }
 
@@ -46,17 +46,17 @@ impl ByteSerialize<u64> for UVarInt {
 impl ByteDeserialize<u64> for UVarInt {
     type ParseErr = VarIntTooBig;
 
-    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<u64, Self::ParseErr> {
+    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<u64, ParseOrIOError<Self::ParseErr, R::Err>> {
         let mut val = 0u64;
         let mut cnt = 1;
         loop {
-            let byte = io.read_byte();
+            let byte = io.read_byte().map_err(ParseOrIOError::IO)?;
             if cnt == 10 {
                 // 7 bits * 9 bytes = 63 bits
                 // So on the tenth byte, we can only "take in" 1 bit of data: 1 or 0
                 // And it has to be the last one, so the top bit must be zero
                 if byte > 1 {
-                    return Err(VarIntTooBig)
+                    return Err(ParseOrIOError::Parse(VarIntTooBig))
                 }
             }
             val |= ((byte & 0x7f) as u64) << ((cnt-1)*7);
@@ -91,7 +91,7 @@ fn decode_svarint(n: u64) -> i64 {
 }
 
 impl ByteSerialize<i64> for SVarInt {
-    fn byte_serialize<W: io::ByteWrite>(item: &i64, io: &mut W) {
+    fn byte_serialize<W: io::ByteWrite>(item: &i64, io: &mut W) -> Result<(), W::Err> {
         UVarInt::byte_serialize(&encode_svarint(*item), io)
     }
 
@@ -103,7 +103,7 @@ impl ByteSerialize<i64> for SVarInt {
 impl ByteDeserialize<i64> for SVarInt {
     type ParseErr = VarIntTooBig;
 
-    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<i64, Self::ParseErr> {
+    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<i64, ParseOrIOError<Self::ParseErr, R::Err>> {
         UVarInt::byte_deserialize(io).map(decode_svarint)
     }
 }

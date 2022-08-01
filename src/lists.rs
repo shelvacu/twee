@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::io;
-use crate::serde::{ByteTypeId, ByteDeserialize, ByteSerialize};
+use crate::serde::{ByteTypeId, ByteDeserialize, ByteSerialize, ParseOrIOError};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct LengthPrefixList<LE, VE>
@@ -54,13 +54,13 @@ where
 {
     type ParseErr = ListParseError<LE::ParseErr, VE::ParseErr>;
 
-    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<Vec<V>, Self::ParseErr> {
-        let length:u64 = LE::byte_deserialize(io)?;
+    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<Vec<V>, ParseOrIOError<Self::ParseErr, R::Err>> {
+        let length:u64 = LE::byte_deserialize(io).map_err(|e| e.map_parse(ListParseError::LengthParseError))?;
 
         let mut res = Vec::with_capacity(length.try_into().unwrap());
 
         for idx in 0..length {
-            res.push(VE::byte_deserialize(io).map_err(|e| ListParseError::ItemParseError{idx, error: e})?);
+            res.push(VE::byte_deserialize(io).map_err(|e| e.map_parse(|pe| ListParseError::ItemParseError{idx, error: pe}))?);
         }
         Ok(res)
     }
@@ -71,13 +71,14 @@ where
     LE: ByteSerialize<u64>,
     VE: ByteSerialize<V>,
 { 
-    fn byte_serialize<W: io::ByteWrite>(item: &[V], io: &mut W) {
+    fn byte_serialize<W: io::ByteWrite>(item: &[V], io: &mut W) -> Result<(), W::Err> {
         let length:u64 = item.len().try_into().unwrap();
-        LE::byte_serialize(&length, io);
+        LE::byte_serialize(&length, io)?;
 
         for el in item.iter() {
-            VE::byte_serialize(&el, io);
+            VE::byte_serialize(&el, io)?;
         }
+        Ok(())
     }
 
     fn size(item: &[V]) -> u64 {
@@ -100,49 +101,3 @@ mod test {
         >(a.as_slice());
     }
 }
-
-// impl<LE, VE, V> ByteSerialize<Vec<V>> for LengthPrefixList<LE, VE, V>
-// where
-//     LE: ByteSerialize<u64>,
-//     VE: ByteSerialize<V>,
-// { 
-//     fn byte_serialize<W: io::ByteWrite>(item: &Vec<V>, io: &mut W) {
-//         Self::byte_serialize(item.as_slice(), io);
-//     }
-
-//     fn size(item: &Vec<V>) -> u64 {
-//         Self::size(item.as_slice())
-//     }
-// }
-
-// impl<LE, VE, V, T> ByteTypeId<T> for LengthPrefixList<LE, VE, V>
-// where
-//     LE: ByteTypeId<u64>,
-//     VE: ByteTypeId<V>,
-//     T: Iterator<Item = V> + std::iter::ExactSizeIterator,
-// {
-//     fn byte_type_id() -> Vec<&'static str> {
-//         let mut res = Vec::new();
-//         res.push("twee::LengthPrefixedList<");
-//         res.extend_from_slice(LE::byte_type_id().as_slice());
-//         res.push(",");
-//         res.extend_from_slice(VE::byte_type_id().as_slice());
-//         res.push(">");
-//         res
-//     }
-// }
-
-// impl<LE, VE, V, T> ByteSerialize<T> for LengthPrefixList<LE, VE, V>
-// where
-//     LE: ByteSerialize<u64>,
-//     VE: ByteSerialize<V>,
-//     T: Iterator<Item = V> + std::iter::ExactSizeIterator,
-// {
-//     fn byte_serialize<W: io::ByteWrite>(item: &T, io: &mut W) {
-//         todo!()
-//     }
-
-//     fn size(item: &T) -> u64 {
-//         todo!()
-//     }
-// }

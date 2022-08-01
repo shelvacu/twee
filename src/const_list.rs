@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 use crate::io;
-use crate::serde::{ByteTypeId, ByteDeserialize, ByteSerialize};
+use crate::serde::{ByteTypeId, ByteDeserialize, ByteSerialize, ParseOrIOError};
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ConstListEncoder<VE>
@@ -39,12 +39,12 @@ where
 {
     type ParseErr = ParseConstListError<VE::ParseErr>;
 
-    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<[V; N], Self::ParseErr> {
+    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<[V; N], ParseOrIOError<Self::ParseErr, R::Err>> {
         let mut data:[MaybeUninit<V>; N] = MaybeUninit::uninit_array();
 
         let mut index = 0;
         while index < data.len() {
-            let res = VE::byte_deserialize(io).map_err(|error| ParseConstListError{index, error});
+            let res = VE::byte_deserialize(io).map_err(|error| error.map_parse(|e| ParseConstListError{index, error: e}));
             match res {
                 Ok(v) => {
                     data[index].write(v);
@@ -73,10 +73,11 @@ where
     VE: ByteSerialize<V>,
     [V; N]: ,
 {
-    fn byte_serialize<W: io::ByteWrite>(item: &[V; N], io: &mut W) {
+    fn byte_serialize<W: io::ByteWrite>(item: &[V; N], io: &mut W) -> Result<(), W::Err> {
         for i in 0..N {
-            VE::byte_serialize(&item[i], io)
+            VE::byte_serialize(&item[i], io)?;
         }
+        Ok(())
     }
 
     fn size(item: &[V; N]) -> u64 {

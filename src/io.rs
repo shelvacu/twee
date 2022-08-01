@@ -39,30 +39,39 @@ impl<T: Sized, const SIZE: usize> ArrayExt for [T; SIZE] {
 
 
 pub trait ByteWrite {
-    fn write_byte(&mut self, data: u8);
+    type Err;
 
-    fn write_buf(&mut self, data: &[u8]) {
+    fn write_byte(&mut self, data: u8) -> Result<(), Self::Err>;
+
+    fn write_buf(&mut self, data: &[u8]) -> Result<(), Self::Err> {
         for v in data {
-            self.write_byte(*v);
+            self.write_byte(*v)?;
         }
+        Ok(())
     }
 }
 
 pub trait ByteRead {
-    fn read_byte(&mut self) -> u8 {
-        self.read_buf(1)[0]
+    type Err;
+
+    fn read_byte(&mut self) -> Result<u8, Self::Err> {
+        Ok(self.read_buf(1)?[0])
     }
 
-    fn read_buf<'a>(&'a mut self, len: u64) -> Cow<'a, [u8]>;
+    fn read_buf<'a>(&'a mut self, len: u64) -> Result<Cow<'a, [u8]>, Self::Err>;
 }
 
 impl ByteWrite for Vec<u8> {
-    fn write_byte(&mut self, data: u8) {
+    type Err = !;
+
+    fn write_byte(&mut self, data: u8) -> Result<(), !> {
         self.push(data);
+        Ok(())
     }
 
-    fn write_buf(&mut self, data: &[u8]) {
+    fn write_buf(&mut self, data: &[u8]) -> Result<(), !> {
         self.extend_from_slice(data);
+        Ok(())
     }
 }
 
@@ -84,18 +93,34 @@ impl<'a> ByteCursor<'a> {
     }
 }
 
+#[derive(Debug, Copy, Clone, Default)]
+pub struct EndOfBufferError;
+
+impl std::fmt::Display for EndOfBufferError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "attempted to read past end of buffer")
+    }
+}
+
+impl std::error::Error for EndOfBufferError {}
+
 impl<'a> ByteRead for ByteCursor<'a> {
-    fn read_buf<'b>(&'b mut self, len: u64) -> Cow<'b, [u8]> {
+    type Err = EndOfBufferError;
+
+    fn read_buf<'b>(&'b mut self, len: u64) -> Result<Cow<'b, [u8]>, Self::Err> {
         let len_us:usize = len.try_into().unwrap();
+        if len_us > (self.inner.len() - self.idx) {
+            return Err(EndOfBufferError);
+        }
         let res = &self.inner[self.idx .. self.idx + len_us];
         self.idx += len_us;
-        res.into()
+        Ok(res.into())
     }
 
-    fn read_byte(&mut self) -> u8 {
-        let res = self.inner[self.idx];
+    fn read_byte(&mut self) -> Result<u8, Self::Err> {
+        let res = self.inner.get(self.idx).ok_or(EndOfBufferError)?;
         self.idx += 1;
-        res
+        Ok(*res)
     }
 }
 
@@ -105,12 +130,16 @@ pub struct ByteCounter {
 }
 
 impl ByteWrite for ByteCounter {
-    fn write_byte(&mut self, _data: u8) {
+    type Err = !;
+
+    fn write_byte(&mut self, _data: u8) -> Result<(), !> {
         self.count += 1;
+        Ok(())
     }
 
-    fn write_buf(&mut self, data: &[u8]) {
+    fn write_buf(&mut self, data: &[u8]) -> Result<(), !> {
         let len:u64 = data.len().try_into().unwrap();
         self.count += len;
+        Ok(())
     }
 }

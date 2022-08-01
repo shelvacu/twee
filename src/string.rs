@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::borrow::Cow;
 
 use crate::io;
-use crate::serde::{ByteTypeId, ByteDeserialize, ByteSerialize};
+use crate::serde::{ByteTypeId, ByteDeserialize, ByteSerialize, ParseOrIOError};
 
 #[derive(Default, Copy, Clone)]
 pub struct LengthPrefixString<LE>
@@ -60,10 +60,10 @@ impl<LE> ByteSerialize<str> for LengthPrefixString<LE>
 where
     LE: ByteSerialize<u64>,
 {
-    fn byte_serialize<W: io::ByteWrite>(item: &str, io: &mut W) {
+    fn byte_serialize<W: io::ByteWrite>(item: &str, io: &mut W) -> Result<(), W::Err> {
         let len:u64 = item.len().try_into().unwrap();
-        LE::byte_serialize(&len, io);
-        io.write_buf(item.as_bytes());
+        LE::byte_serialize(&len, io)?;
+        io.write_buf(item.as_bytes())
     }
 
     fn size(item: &str) -> u64 {
@@ -78,34 +78,15 @@ where
 {
     type ParseErr = StringParseError<LE::ParseErr>;
 
-    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<String, Self::ParseErr> {
-        let len:u64 = LE::byte_deserialize(io)?;
+    fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<String, ParseOrIOError<Self::ParseErr, R::Err>> {
+        let len:u64 = LE::byte_deserialize(io).map_err(|e| e.map_parse(StringParseError::LengthParseError))?;
         let mut horror = Vec::with_capacity(len.try_into().unwrap());
         for _ in 0..len {
-            horror.push(io.read_byte());
+            horror.push(io.read_byte().map_err(ParseOrIOError::IO)?);
         }
-        String::from_utf8(horror).map_err(|e| StringParseError::InvalidUtf8OwnedError(e))
+        String::from_utf8(horror).map_err(StringParseError::InvalidUtf8OwnedError).map_err(ParseOrIOError::Parse)
     }
 }
-
-// impl<'c, LE> ByteDeserialize<Cow<'c, str>> for LengthPrefixString<LE>
-// where
-//     LE: ByteDeserialize<u64>,
-// {
-//     type ParseErr = StringParseError<LE::ParseErr>;
-
-//     fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<Cow<'c, str>, Self::ParseErr>
-//     where Cow<'c, str>: 'a
-//     {
-//         let len:u64 = LE::byte_deserialize(io)?;
-//         let buf = io.read_buf(len);
-//         match buf {
-//             Cow::Owned(buf) => String::from_utf8(buf).map_err(|e| StringParseError::InvalidUtf8OwnedError(e)).map(|s| Cow::Owned(s)),
-//             Cow::Borrowed(buf) => std::str::from_utf8(buf).map_err(|e| StringParseError::InvalidUtf8Error(e)).map(|s| Cow::Borrowed(s)),
-//         }
-//     }
-// }
-
 
 #[cfg(test)]
 mod test {
