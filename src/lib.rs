@@ -1,5 +1,6 @@
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs, never_type, maybe_uninit_array_assume_init, maybe_uninit_uninit_array)]
+#![feature(generic_const_exprs, never_type)]
+//#![feature(generic_const_exprs, never_type, maybe_uninit_array_assume_init, maybe_uninit_uninit_array)]
 
 pub mod io;
 pub mod serde;
@@ -9,6 +10,7 @@ pub mod lists;
 pub mod const_list;
 pub mod string;
 pub mod io_wrap;
+pub mod magic_bytes;
 
 //mod cursed;
 pub fn assert_serde_across_through<Ein, Eout, Tin, Tout>(item: &Tin)

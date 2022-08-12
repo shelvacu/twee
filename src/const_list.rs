@@ -40,7 +40,7 @@ where
     type ParseErr = ParseConstListError<VE::ParseErr>;
 
     fn byte_deserialize<R: io::ByteRead>(io: &mut R) -> Result<[V; N], ParseOrIOError<Self::ParseErr, R::Err>> {
-        let mut data:[MaybeUninit<V>; N] = MaybeUninit::uninit_array();
+        let mut data:[MaybeUninit<V>; N] = std::array::from_fn(|_| MaybeUninit::uninit());
 
         let mut index = 0;
         while index < data.len() {
@@ -60,7 +60,7 @@ where
             index += 1;
         }
 
-        Ok(unsafe { MaybeUninit::array_assume_init(data) })   
+        Ok(data.map(|el| unsafe { MaybeUninit::assume_init(el) }))   
     }
 
     fn guess_size() -> Option<usize> {
